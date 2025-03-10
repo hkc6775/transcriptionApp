@@ -17,7 +17,7 @@ const selectedLanguage = ref("fr-FR");
 const recognition = ref(null);
 let updateFrame = null;
 const editingItemId = ref(null);
-const editingText = ref("");
+const editingText = ref(""); 
 const pos11Container = ref(null); // Référence à la div
 
 const languages = [
@@ -53,6 +53,9 @@ const languages = [
   { code: "ms-MY", name: "Bahasa Melayu (Malais)" },
 ];
 
+// ✅ Détection d'Android
+const isAndroid = /Android/i.test(navigator.userAgent);
+
 // ✅ Optimisation de la base de données Dexie
 const db = new Dexie("TranscriptionDB");
 db.version(1).stores({ history: "++id, text" });
@@ -80,15 +83,20 @@ onMounted(() => {
     window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition.value = new SpeechRecognition();
   recognition.value.continuous = true;
-  recognition.value.interimResults = true;
+  recognition.value.interimResults = !isAndroid; // Désactiver sur Android pour éviter les doublons;
   recognition.value.lang = selectedLanguage.value;
 
   recognition.value.onresult = (event) => {
     if (!updateFrame) {
       updateFrame = requestAnimationFrame(() => {
-        transcript.value = Array.from(event.results)
+        let newText = Array.from(event.results)
           .map((result) => result[0].transcript)
           .join(" ");
+
+        // ✅ Éviter les doublons en comparant avec la dernière transcription
+        if (!transcript.value.endsWith(newText)) {
+          transcript.value = newText;
+        }
         updateFrame = null;
       });
     }
@@ -186,8 +194,19 @@ const audioBlob = ref(null);
 let recorder = ref(null);  // Déclarer recorder en tant que ref pour garantir qu'il est réactif
 const isRecording = ref(false);  // Variable pour suivre l'état de l'enregistrement
 
+const checkMicrophonePermission = async () => {
+  const permission = await navigator.permissions.query({ name: "microphone" });
+  if (permission.state === "denied") {
+    alert("⚠️ Accès au micro refusé. Veuillez l'autoriser dans les paramètres.");
+    return false;
+  }
+  return true;
+};
+
 // Fonction pour démarrer l'enregistrement audio
 const startRecording = async () => {
+  if (!(await checkMicrophonePermission())) return;
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recorder.value = new MediaRecorder(stream);  // Utilisation de recorder.value pour affecter l'objet MediaRecorder
